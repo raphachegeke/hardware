@@ -29,12 +29,12 @@ export const stkPush = async ({ phone, amount, accountRef }) => {
     BusinessShortCode: DARJA_SHORTCODE,
     Password: password,
     Timestamp: timestamp,
-    TransactionType: 'CustomerPayBillOnline',
+    TransactionType: 'CustomerBuyGoodsOnline',
     Amount: amount,
     PartyA: phone,
-    PartyB: DARJA_SHORTCODE,
+    PartyB: 6444134,
     PhoneNumber: phone,
-    CallBackURL: 'https://yourdomain.com/api/payments/daraja-callback',
+    CallBackURL: 'https://hardware-gg4y.onrender.com/api/payments/daraja-callback',
     AccountReference: accountRef,
     TransactionDesc: 'Hardware purchase'
   };
