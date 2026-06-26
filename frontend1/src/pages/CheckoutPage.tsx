@@ -18,49 +18,53 @@ import {
 
 type Step = "form" | "paying" | "waiting" | "success" | "failed";
 
-const POLL_INTERVAL = 3000; // Check every 3 seconds
-const MAX_WAIT_TIME = 120000; // 2 minutes max wait
-const RETRY_COOLDOWN = 5000; // 5 seconds before retry button appears
+const POLL_INTERVAL = 3000;
+const MAX_WAIT_TIME = 120000;
+const RETRY_COOLDOWN = 5000;
 
 const CheckoutPage = () => {
   const { items, total, clearCart } = useCart();
   const { user, token } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const retryOrderId = searchParams.get("retry"); // For retrying from orders page
+  const retryOrderId = searchParams.get("retry");
 
+  // ✅ ALL hooks declared at the top, before any conditional logic
   const [phone, setPhone] = useState(user?.phone || "");
   const [address, setAddress] = useState(user?.address || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [step, setStep] = useState<Step>("form");
   const [orderId, setOrderId] = useState("");
-  const [paymentResult, setPaymentResult] = useState<any>(null);
+  const [paymentResult, setPaymentResult] = useState<{ mpesaReceiptNumber?: string } | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [canRetry, setCanRetry] = useState(false);
   const [failureReason, setFailureReason] = useState("");
+  const [manualConfirmOpen, setManualConfirmOpen] = useState(false);
+  const [receiptInput, setReceiptInput] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const waitStartTimeRef = useRef<number>(0);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Redirect if not logged in
-  if (!token) {
-    navigate("/login");
-    return null;
-  }
+  // ✅ Handle redirects with useEffect (after all hooks)
+  useEffect(() => {
+    if (!token) {
+      navigate("/login", { replace: true });
+    }
+  }, [token, navigate]);
 
-  // Redirect if cart is empty and not retrying
-  if (items.length === 0 && step === "form" && !retryOrderId) {
-    navigate("/cart");
-    return null;
-  }
+  useEffect(() => {
+    if (items.length === 0 && step === "form" && !retryOrderId && token) {
+      navigate("/cart", { replace: true });
+    }
+  }, [items.length, step, retryOrderId, token, navigate]);
 
   // Handle retry from orders page
   useEffect(() => {
     if (retryOrderId && token) {
       setOrderId(retryOrderId);
-      // Fetch order details to prefill
       ordersApi
         .getById(token, retryOrderId)
         .then((order) => {
@@ -73,6 +77,7 @@ const CheckoutPage = () => {
           setError("Order not found");
         });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryOrderId]);
 
   // Cleanup intervals on unmount
@@ -101,17 +106,14 @@ const CheckoutPage = () => {
       setCanRetry(false);
       setStep("waiting");
 
-      // Update elapsed time every second
       timerIntervalRef.current = setInterval(() => {
         const elapsed = Date.now() - waitStartTimeRef.current;
         setElapsedTime(Math.floor(elapsed / 1000));
 
-        // Enable retry after cooldown
         if (elapsed >= RETRY_COOLDOWN) {
           setCanRetry(true);
         }
 
-        // Timeout after max wait
         if (elapsed >= MAX_WAIT_TIME) {
           stopPolling();
           setStep("failed");
@@ -119,7 +121,6 @@ const CheckoutPage = () => {
         }
       }, 1000);
 
-      // Poll for payment status
       pollIntervalRef.current = setInterval(async () => {
         try {
           const response = await mpesaApi.checkPaymentStatus(token!, oid);
@@ -138,10 +139,8 @@ const CheckoutPage = () => {
             setFailureReason(response.message || "Payment failed");
             setCanRetry(true);
           }
-          // If "pending", continue polling
-        } catch (err: any) {
+        } catch (err) {
           console.error("Poll error:", err);
-          // Don't stop polling on network errors, just continue
         }
       }, POLL_INTERVAL);
     },
@@ -154,17 +153,14 @@ const CheckoutPage = () => {
     setFailureReason("");
 
     try {
-      // Format phone for M-Pesa (254...)
       let mpesaPhone = phone.replace(/\s/g, "");
       if (mpesaPhone.startsWith("0")) mpesaPhone = "254" + mpesaPhone.slice(1);
       if (!mpesaPhone.startsWith("254")) mpesaPhone = "254" + mpesaPhone;
 
-      // Validate phone format
       if (!/^254\d{9}$/.test(mpesaPhone)) {
         throw new Error("Please enter a valid phone number (e.g., 07XXXXXXXX)");
       }
 
-      // Create order
       const order = await ordersApi.create(token!, {
         items: items.map((i) => ({
           product: i.productId,
@@ -177,7 +173,6 @@ const CheckoutPage = () => {
       const oid = order._id || order.order?._id;
       setOrderId(oid);
 
-      // Trigger STK Push
       setStep("paying");
       const result = await mpesaApi.stkPush(token!, {
         orderId: oid,
@@ -190,7 +185,7 @@ const CheckoutPage = () => {
       } else {
         setStep("failed");
         setFailureReason(
-          result.data.ResponseDescription || "STK Push was rejected",
+          result.data?.ResponseDescription || "STK Push was rejected",
         );
         setCanRetry(true);
       }
@@ -207,6 +202,8 @@ const CheckoutPage = () => {
 
   const handleRetryPayment = async (oid?: string) => {
     const targetOrderId = oid || orderId;
+    if (!targetOrderId) return;
+    
     setError("");
     setFailureReason("");
     setLoading(true);
@@ -222,7 +219,7 @@ const CheckoutPage = () => {
       } else {
         setStep("failed");
         setFailureReason(
-          result.data.ResponseDescription || "STK Push was rejected",
+          result.data?.ResponseDescription || "STK Push was rejected",
         );
         setCanRetry(true);
       }
@@ -237,18 +234,47 @@ const CheckoutPage = () => {
     }
   };
 
+  const handleManualConfirm = async () => {
+    setConfirming(true);
+    try {
+      await mpesaApi.manualConfirm(token!, {
+        orderId,
+        receiptNumber: receiptInput,
+      });
+      stopPolling();
+      clearCart();
+      setPaymentResult({ mpesaReceiptNumber: receiptInput });
+      setStep("success");
+      setManualConfirmOpen(false);
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // ✅ Guard clauses for rendering (not before hooks)
+  if (!token || (items.length === 0 && step === "form" && !retryOrderId)) {
+    return (
+      <Layout>
+        <div className="container max-w-lg py-16 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="container max-w-lg py-16 animate-fade-in">
         <h1 className="text-3xl font-bold mb-8">Checkout</h1>
 
-        {/* FORM STEP */}
         {step === "form" && (
           <div className="space-y-6">
             <div className="bg-card border rounded-lg p-6 space-y-4">
@@ -323,7 +349,6 @@ const CheckoutPage = () => {
           </div>
         )}
 
-        {/* PAYING STEP - STK Push being sent */}
         {step === "paying" && (
           <div className="text-center space-y-4 py-12">
             <Loader2 className="w-16 h-16 animate-spin text-primary mx-auto" />
@@ -334,10 +359,9 @@ const CheckoutPage = () => {
           </div>
         )}
 
-        {/* WAITING STEP - Polling for payment */}
         {step === "waiting" && (
           <div className="text-center space-y-6 py-8">
-            <div className="relative">
+            <div className="relative inline-block">
               <Smartphone className="w-16 h-16 text-primary mx-auto animate-pulse" />
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
                 {formatTime(elapsedTime)}
@@ -388,12 +412,20 @@ const CheckoutPage = () => {
                   )}
                   Resend M-Pesa Prompt
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  If you already paid and got an M-Pesa confirmation message,{" "}
+                  <button
+                    className="text-primary underline hover:no-underline"
+                    onClick={() => setManualConfirmOpen(true)}
+                  >
+                    confirm payment manually
+                  </button>
+                </p>
               </div>
             )}
           </div>
         )}
 
-        {/* SUCCESS STEP */}
         {step === "success" && (
           <div className="text-center space-y-4 py-8">
             <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto">
@@ -444,7 +476,6 @@ const CheckoutPage = () => {
           </div>
         )}
 
-        {/* FAILED STEP */}
         {step === "failed" && (
           <div className="text-center space-y-4 py-8">
             <div className="w-20 h-20 bg-destructive/10 rounded-full flex items-center justify-center mx-auto">
@@ -455,9 +486,7 @@ const CheckoutPage = () => {
                 Payment Failed
               </h2>
               <p className="text-muted-foreground">
-                {failureReason ||
-                  error ||
-                  "The payment could not be completed."}
+                {failureReason || error || "The payment could not be completed."}
               </p>
             </div>
 
@@ -499,6 +528,50 @@ const CheckoutPage = () => {
               <Button variant="ghost" onClick={() => navigate("/orders")}>
                 View Orders
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Confirm Modal */}
+        {manualConfirmOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-card border rounded-lg p-6 max-w-sm w-full space-y-4">
+              <h3 className="font-bold text-lg">Confirm Payment Manually</h3>
+              <p className="text-sm text-muted-foreground">
+                Enter the M-Pesa confirmation code (e.g., SHK4X7Y9Z2) from your phone's M-Pesa message.
+              </p>
+              {error && (
+                <p className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+                  {error}
+                </p>
+              )}
+              <Input
+                placeholder="e.g., SHK4X7Y9Z2"
+                value={receiptInput}
+                onChange={(e) => {
+                  setError("");
+                  setReceiptInput(e.target.value.toUpperCase());
+                }}
+              />
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1"
+                  disabled={!receiptInput || confirming}
+                  onClick={handleManualConfirm}
+                >
+                  {confirming && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Confirm
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setManualConfirmOpen(false);
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </div>
         )}
