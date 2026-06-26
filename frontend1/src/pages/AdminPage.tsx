@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { productsApi, categoriesApi, ordersApi } from "@/lib/api";
 import Layout from "@/components/Layout";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Trash2, Plus, Package, LayoutGrid, ClipboardList } from "lucide-react";
+import { Loader2, Trash2, Plus, Package, LayoutGrid, ClipboardList, Search, CheckCircle, XCircle, Clock, Truck, Ban, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 
 const AdminPage = () => {
@@ -19,6 +19,10 @@ const AdminPage = () => {
   const [categories, setCategories] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   // Product form
   const [pForm, setPForm] = useState({ name: "", description: "", price: "", stock: "", images: "", category: "", featured: false });
@@ -47,6 +51,36 @@ const AdminPage = () => {
     } catch { }
     setLoading(false);
   };
+
+  // Filter and search orders
+  const filteredOrders = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+
+    return orders.filter((order) => {
+      // Status filter
+      if (statusFilter !== "all" && order.status !== statusFilter) return false;
+
+      // Search filter
+      if (!query) return true;
+
+      const orderId = order._id?.toLowerCase() || "";
+      const shortId = orderId.slice(-8);
+      const userName = order.user?.name?.toLowerCase() || "";
+      const userEmail = order.user?.email?.toLowerCase() || "";
+      const userPhone = order.phone?.toLowerCase() || "";
+      const receipt = order.mpesaReceiptNumber?.toLowerCase() || "";
+
+      // Search by order number, name, email, phone, or receipt
+      return (
+        orderId.includes(query) ||
+        shortId.includes(query) ||
+        userName.includes(query) ||
+        userEmail.includes(query) ||
+        userPhone.includes(query) ||
+        receipt.includes(query)
+      );
+    });
+  }, [orders, searchQuery, statusFilter]);
 
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,11 +128,27 @@ const AdminPage = () => {
     setCLoading(false);
   };
 
+  const getStatusBadge = (status: string) => {
+    const s = status?.toLowerCase()?.trim();
+    switch (s) {
+      case "paid":
+        return { label: "Paid", bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", icon: <CheckCircle className="w-3 h-3" /> };
+      case "delivered":
+        return { label: "Delivered", bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-400", icon: <Truck className="w-3 h-3" /> };
+      case "cancelled":
+        return { label: "Cancelled", bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400", icon: <Ban className="w-3 h-3" /> };
+      case "failed":
+        return { label: "Failed", bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400", icon: <XCircle className="w-3 h-3" /> };
+      default:
+        return { label: "Pending", bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400", icon: <Clock className="w-3 h-3" /> };
+    }
+  };
+
   if (authLoading || loading) return <Layout><div className="container py-16"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div></Layout>;
 
   return (
     <Layout>
-      <div className="container py-12 animate-fade-in">
+      <div className="container max-w-5xl py-12 animate-fade-in">
         <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
 
         <Tabs defaultValue="products">
@@ -108,7 +158,7 @@ const AdminPage = () => {
             <TabsTrigger value="orders" className="gap-1"><ClipboardList className="w-4 h-4" /> Orders</TabsTrigger>
           </TabsList>
 
-          {/* Products */}
+          {/* ==================== PRODUCTS ==================== */}
           <TabsContent value="products" className="space-y-8">
             <form onSubmit={handleCreateProduct} className="bg-card border rounded-lg p-6 space-y-4">
               <h2 className="font-display font-bold flex items-center gap-2"><Plus className="w-5 h-5" /> Add Product</h2>
@@ -156,7 +206,7 @@ const AdminPage = () => {
             </div>
           </TabsContent>
 
-          {/* Categories */}
+          {/* ==================== CATEGORIES ==================== */}
           <TabsContent value="categories" className="space-y-8">
             <form onSubmit={handleCreateCategory} className="bg-card border rounded-lg p-6 space-y-4">
               <h2 className="font-display font-bold flex items-center gap-2"><Plus className="w-5 h-5" /> Add Category</h2>
@@ -182,37 +232,198 @@ const AdminPage = () => {
             </div>
           </TabsContent>
 
-          {/* Orders */}
+          {/* ==================== ORDERS ==================== */}
           <TabsContent value="orders" className="space-y-4">
-            <h2 className="font-display font-bold">All Orders ({orders.length})</h2>
-            {orders.length === 0 ? (
-              <p className="text-muted-foreground">No orders yet.</p>
-            ) : orders.map((order: any) => (
-              <div key={order._id} className="bg-card border rounded-lg p-5 space-y-2">
-                <div className="flex justify-between flex-wrap gap-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Order #{order._id?.slice(-8)}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleString()}</p>
-                    {order.user && <p className="text-xs text-muted-foreground">User: {order.user.name || order.user.email || order.user}</p>}
-                  </div>
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full h-fit ${
-                    order.status === "delivered" ? "bg-success/10 text-success" :
-                    order.status === "cancelled" ? "bg-destructive/10 text-destructive" :
-                    "bg-warning/10 text-warning-foreground"
-                  }`}>{order.status || "pending"}</span>
-                </div>
-                {order.items?.map((item: any, idx: number) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span>{item.product?.name || "Product"} × {item.quantity}</span>
-                    <span>KSh {((item.product?.price || 0) * item.quantity).toLocaleString()}</span>
-                  </div>
-                ))}
-                <div className="border-t pt-2 flex justify-between font-bold text-sm">
-                  <span>Total: KSh {order.totalAmount?.toLocaleString() || "—"}</span>
-                  <span>Payment: {order.paymentStatus || "pending"}</span>
-                </div>
+            {/* Search & Filter Bar */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by order #, name, email, phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
               </div>
-            ))}
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-44">
+                  <SelectValue placeholder="Filter status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Results count */}
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <p>
+                Showing <strong>{filteredOrders.length}</strong> of {orders.length} orders
+              </p>
+              {(searchQuery || statusFilter !== "all") && (
+                <button
+                  className="text-primary hover:underline text-xs"
+                  onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {/* Orders List */}
+            {filteredOrders.length === 0 ? (
+              <div className="text-center py-12 bg-card border rounded-lg">
+                <ClipboardList className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">
+                  {searchQuery || statusFilter !== "all"
+                    ? "No orders match your search."
+                    : "No orders yet."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredOrders.map((order: any) => {
+                  const statusBadge = getStatusBadge(order.status);
+                  const user = order.user || {};
+
+                  return (
+                    <div
+                      key={order._id}
+                      className="bg-card border rounded-lg overflow-hidden"
+                    >
+                      {/* Order Header */}
+                      <div className="flex items-center justify-between p-4 pb-3 border-b bg-muted/20">
+                        <div className="space-y-0.5">
+                          <p className="font-mono text-sm font-bold">
+                            #{order._id?.slice(-8).toUpperCase()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(order.createdAt).toLocaleDateString("en-KE", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1.5 ${statusBadge.bg} ${statusBadge.text}`}
+                        >
+                          {statusBadge.icon}
+                          {statusBadge.label}
+                        </span>
+                      </div>
+
+                      {/* Customer Info */}
+                      <div className="px-4 py-3 border-b grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Customer</p>
+                          <p className="font-medium">{user.name || "Unknown"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Email</p>
+                          <p className="font-medium truncate">{user.email || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Phone</p>
+                          <p className="font-medium">{order.phone || user.phone || "—"}</p>
+                        </div>
+                      </div>
+
+                      {/* Order Items */}
+                      <div className="px-4 py-3 border-b">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-muted-foreground border-b">
+                              <th className="text-left pb-2 font-medium">Product</th>
+                              <th className="text-center pb-2 font-medium w-16">Qty</th>
+                              <th className="text-right pb-2 font-medium w-28">Price</th>
+                              <th className="text-right pb-2 font-medium w-28">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {order.items?.map((item: any, idx: number) => {
+                              const name = item.product?.name || item.name || "Product";
+                              const price = item.product?.price || item.price || 0;
+                              const qty = item.quantity || 1;
+                              const image = item.product?.image || item.image;
+
+                              return (
+                                <tr key={idx} className="border-b last:border-0">
+                                  <td className="py-2">
+                                    <div className="flex items-center gap-2">
+                                      {image && (
+                                        <img
+                                          src={image}
+                                          alt={name}
+                                          className="w-8 h-8 rounded object-cover bg-muted"
+                                        />
+                                      )}
+                                      <span className="truncate max-w-[200px]">{name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-2 text-center">{qty}</td>
+                                  <td className="py-2 text-right text-muted-foreground">
+                                    KSh {price.toLocaleString()}
+                                  </td>
+                                  <td className="py-2 text-right font-medium">
+                                    KSh {(price * qty).toLocaleString()}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Order Footer */}
+                      <div className="px-4 py-3 bg-muted/30 space-y-2">
+                        {/* Delivery address */}
+                        {order.deliveryAddress && (
+                          <p className="text-xs text-muted-foreground">
+                            📍 Delivery: {order.deliveryAddress}
+                          </p>
+                        )}
+
+                        {/* M-Pesa receipt */}
+                        {order.mpesaReceiptNumber && (
+                          <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                            <Smartphone className="w-3 h-3" />
+                            <span>
+                              Receipt:{" "}
+                              <span className="font-mono font-medium">
+                                {order.mpesaReceiptNumber}
+                              </span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Error */}
+                        {order.status === "failed" && order.lastPaymentError && (
+                          <p className="text-xs text-red-600 dark:text-red-400">
+                            ⚠️ {order.lastPaymentError}
+                          </p>
+                        )}
+
+                        {/* Total */}
+                        <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                          <span className="text-sm font-medium">Total</span>
+                          <span className="text-xl font-bold text-primary">
+                            KSh {order.totalAmount?.toLocaleString() || "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

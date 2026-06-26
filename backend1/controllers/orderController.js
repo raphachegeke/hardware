@@ -41,22 +41,28 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// Get logged in user orders
-exports.getMyOrders = async (req, res) => {
+exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id }).populate("items.product");
+    const orders = await Order.find()
+      .populate("user", "name email phone address") // 👈 Populate user details
+      .populate("items.product", "name price image") // 👈 Populate product details
+      .sort({ createdAt: -1 }); // 👈 Newest first
+
     res.json(orders);
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: error.message });
   }
 };
 
-// Admin get all orders
-exports.getAllOrders = async (req, res) => {
+// Also update getMyOrders so user sees item names
+exports.getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find().populate("user").populate("items.product");
+    const orders = await Order.find({ user: req.user._id })
+      .populate("items.product", "name price image")
+      .sort({ createdAt: -1 });
+
     res.json(orders);
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: error.message });
   }
 };
