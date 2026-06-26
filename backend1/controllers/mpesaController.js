@@ -244,14 +244,18 @@ exports.checkPaymentStatus = async (req, res) => {
   }
 };
 
-// STK Callback (called by M-Pesa)
+// STK Callback (called by M-Pesa servers)
 exports.stkCallback = async (req, res) => {
   try {
-    console.log("M-Pesa Callback received:", JSON.stringify(req.body, null, 2));
+    console.log("======= M-PESA CALLBACK RECEIVED =======");
+    console.log("Time:", new Date().toISOString());
+    console.log("Body:", JSON.stringify(req.body, null, 2));
+    console.log("=========================================");
 
-    const stkCallback = req.body.Body?.stkCallback;
+    const stkCallback = req.body?.Body?.stkCallback;
     if (!stkCallback) {
-      return res.json({ message: "No callback data" });
+      console.log("ERROR: No stkCallback in body");
+      return res.status(400).json({ ResultCode: 1, ResultDesc: "No data" });
     }
 
     const orderId = stkCallback.AccountReference;
@@ -259,32 +263,81 @@ exports.stkCallback = async (req, res) => {
     const resultDesc = stkCallback.ResultDesc;
     const checkoutRequestID = stkCallback.CheckoutRequestID;
 
+    console.log(`Order: ${orderId}, ResultCode: ${resultCode}, Desc: ${resultDesc}`);
+
     const receipt = stkCallback.CallbackMetadata?.Item?.find(
       (i) => i.Name === "MpesaReceiptNumber"
     )?.Value;
 
     if (resultCode === 0) {
-      // Success
-      await Order.findByIdAndUpdate(orderId, {
-        status: "paid",
-        mpesaReceiptNumber: receipt,
-        checkoutRequestID: checkoutRequestID,
-        paidAt: new Date(),
-      });
-      console.log(`Order ${orderId} paid with receipt ${receipt}`);
+      const updated = await Order.findByIdAndUpdate(
+        orderId,
+        {
+          status: "paid",
+          mpesaReceiptNumber: receipt,
+          checkoutRequestID: checkoutRequestID,
+          paidAt: new Date(),
+        },
+        { new: true }
+      );
+      console.log(`✅ Order ${orderId} PAID. Receipt: ${receipt}`);
+      console.log("Updated order:", JSON.stringify(updated, null, 2));
     } else {
-      // Failed
       await Order.findByIdAndUpdate(orderId, {
         status: "failed",
         lastPaymentError: resultDesc,
         checkoutRequestID: checkoutRequestID,
       });
-      console.log(`Order ${orderId} payment failed: ${resultDesc}`);
+      console.log(`❌ Order ${orderId} FAILED: ${resultDesc}`);
     }
 
-    res.json({ ResultCode: 0, ResultDesc: "Callback received" });
+    // Always respond quickly to M-Pesa
+    res.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (error) {
-    console.error("Callback Error:", error);
-    res.status(500).json({ message: "Callback error" });
+    console.error("======= CALLBACK ERROR =======");
+    console.error(error);
+    console.error("==============================");
+    res.status(500).json({ ResultCode: 1, ResultDesc: "Server error" });
   }
+};
+
+// Add this at the bottom of the file
+
+// Manual payment confirmation (fallback when callback fails)
+exports.manualConfirm = async (req, res) => {
+  try {
+    const { orderId, receiptNumber } = req.body;
+
+    if (!orderId || !receiptNumber) {
+      return res.status(400).json({ message: "Order ID and receipt number required" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    if (order.status === "paid") {
+      return res.status(400).json({ message: "Order already paid" });
+    }
+
+    order.status = "paid";
+    order.mpesaReceiptNumber = receiptNumber;
+    order.paidAt = new Date();
+    await order.save();
+
+    console.log(`Manual confirm: Order ${orderId} paid with receipt ${receiptNumber}`);
+
+    res.json({ message: "Payment confirmed", order });
+  } catch (error) {
+    console.error("Manual confirm error:", error);
+    res.status(500).json({ message: "Failed to confirm payment" });
+  }
+};
+
+// Debug endpoint - check what M-Pesa would see
+exports.debugCallback = async (req, res) => {
+  console.log("=== DEBUG CALLBACK RECEIVED ===");
+  console.log("Headers:", JSON.stringify(req.headers, null, 2));
+  console.log("Body:", JSON.stringify(req.body, null, 2));
+  console.log("=== END DEBUG ===");
+  res.json({ message: "Debug logged, check server logs" });
 };
