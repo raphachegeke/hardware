@@ -2,45 +2,42 @@ const Order = require("../models/Order");
 const Product = require("../models/Product");
 
 // Create order
+// controllers/orderController.js
 exports.createOrder = async (req, res) => {
   try {
     const { items, phone, deliveryAddress } = req.body;
 
-    if (!items || items.length === 0) {
-      return res.status(400).json({ message: "No order items" });
-    }
-
+    // Calculate total
     let totalAmount = 0;
+    const orderItems = [];
 
-    // Calculate total and reduce stock
     for (const item of items) {
       const product = await Product.findById(item.product);
-
       if (!product) {
-        return res.status(404).json({ message: "Product not found" });
+        return res.status(404).json({ message: `Product ${item.product} not found` });
       }
-
-      if (product.stock < item.quantity) {
-        return res.status(400).json({ message: "Insufficient stock" });
-      }
-
+      orderItems.push({
+        product: product._id,
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        quantity: item.quantity,
+      });
       totalAmount += product.price * item.quantity;
-
-      product.stock -= item.quantity;
-      await product.save();
     }
 
     const order = await Order.create({
       user: req.user._id,
-      items,
+      items: orderItems,
       totalAmount,
       phone,
       deliveryAddress,
+      status: "pending", // 👈 MAKE SURE THIS IS SET
     });
 
     res.status(201).json(order);
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: error.message });
   }
 };
 

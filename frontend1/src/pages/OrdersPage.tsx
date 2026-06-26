@@ -13,6 +13,7 @@ import {
   Truck,
   Ban,
   Smartphone,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -44,55 +45,60 @@ const OrdersPage = () => {
 
   const handleRetry = (orderId: string) => {
     setRetryingId(orderId);
-    // Small delay so the user sees the spinner
     setTimeout(() => {
       navigate(`/checkout?retry=${orderId}`);
     }, 300);
   };
 
   const getStatusConfig = (status: string) => {
-    switch (status) {
-      case "paid":
-        return {
-          label: "Paid",
-          bg: "bg-success/10",
-          text: "text-success",
-          icon: <CheckCircle className="w-3 h-3" />,
-        };
-      case "delivered":
-        return {
-          label: "Delivered",
-          bg: "bg-success/10",
-          text: "text-success",
-          icon: <Truck className="w-3 h-3" />,
-        };
-      case "failed":
-        return {
-          label: "Payment Failed",
-          bg: "bg-destructive/10",
-          text: "text-destructive",
-          icon: <XCircle className="w-3 h-3" />,
-        };
-      case "cancelled":
-        return {
-          label: "Cancelled",
-          bg: "bg-destructive/10",
-          text: "text-destructive",
-          icon: <Ban className="w-3 h-3" />,
-        };
-      case "pending":
-      default:
-        return {
-          label: "Pending",
-          bg: "bg-warning/10",
-          text: "text-warning-foreground",
-          icon: <Clock className="w-3 h-3" />,
-        };
+    const s = status?.toLowerCase()?.trim();
+    
+    if (s === "paid") {
+      return {
+        label: "Paid",
+        bg: "bg-green-100 dark:bg-green-900/30",
+        text: "text-green-700 dark:text-green-400",
+        icon: <CheckCircle className="w-3 h-3" />,
+      };
     }
+    if (s === "delivered") {
+      return {
+        label: "Delivered",
+        bg: "bg-green-100 dark:bg-green-900/30",
+        text: "text-green-700 dark:text-green-400",
+        icon: <Truck className="w-3 h-3" />,
+      };
+    }
+    if (s === "failed") {
+      return {
+        label: "Payment Failed",
+        bg: "bg-red-100 dark:bg-red-900/30",
+        text: "text-red-700 dark:text-red-400",
+        icon: <XCircle className="w-3 h-3" />,
+      };
+    }
+    if (s === "cancelled") {
+      return {
+        label: "Cancelled",
+        bg: "bg-red-100 dark:bg-red-900/30",
+        text: "text-red-700 dark:text-red-400",
+        icon: <Ban className="w-3 h-3" />,
+      };
+    }
+    // Default = pending, undefined, null, or anything else
+    return {
+      label: "Pending",
+      bg: "bg-yellow-100 dark:bg-yellow-900/30",
+      text: "text-yellow-700 dark:text-yellow-400",
+      icon: <Clock className="w-3 h-3" />,
+    };
   };
 
+  // Show retry for anything that's NOT paid/delivered/cancelled
   const canRetryPayment = (status: string) => {
-    return status === "failed" || status === "pending";
+    const s = status?.toLowerCase()?.trim();
+    const finalStatuses = ["paid", "delivered", "cancelled"];
+    return !finalStatuses.includes(s);
   };
 
   return (
@@ -174,6 +180,11 @@ const OrdersPage = () => {
                               className="w-10 h-10 rounded object-cover bg-muted"
                             />
                           )}
+                          {!image && (
+                            <div className="w-10 h-10 rounded bg-muted flex items-center justify-center">
+                              <Package className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <p className="truncate">{name}</p>
                             <p className="text-xs text-muted-foreground">
@@ -190,9 +201,9 @@ const OrdersPage = () => {
 
                   {/* Footer */}
                   <div className="px-4 py-3 bg-muted/30 space-y-3">
-                    {/* Payment info for paid orders */}
+                    {/* Paid - show receipt */}
                     {order.status === "paid" && order.mpesaReceiptNumber && (
-                      <div className="flex items-center gap-2 text-xs text-success">
+                      <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
                         <Smartphone className="w-3.5 h-3.5" />
                         <span>
                           M-Pesa Receipt:{" "}
@@ -203,11 +214,24 @@ const OrdersPage = () => {
                       </div>
                     )}
 
-                    {/* Error message for failed orders */}
-                    {order.status === "failed" && order.lastPaymentError && (
-                      <p className="text-xs text-destructive">
-                        {order.lastPaymentError}
-                      </p>
+                    {/* Failed - show error + retry button */}
+                    {order.status === "failed" && (
+                      <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
+                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <span>
+                          {order.lastPaymentError || "Payment was not completed."}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Pending - show notice */}
+                    {(!order.status || order.status === "pending") && (
+                      <div className="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-400">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>
+                          Payment not yet completed. Tap retry to pay.
+                        </span>
+                      </div>
                     )}
 
                     {/* Delivery address */}
@@ -217,7 +241,7 @@ const OrdersPage = () => {
                       </p>
                     )}
 
-                    {/* Total and actions */}
+                    {/* Total + Actions */}
                     <div className="flex items-center justify-between pt-2 border-t border-border/50">
                       <div>
                         <span className="text-sm text-muted-foreground">
@@ -229,30 +253,22 @@ const OrdersPage = () => {
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* 👇 RETRY BUTTON - now shows for pending/failed/undefined */}
                         {showRetry && (
                           <Button
                             size="sm"
-                            variant="destructive"
                             onClick={() => handleRetry(order._id)}
                             disabled={retryingId === order._id}
+                            className="bg-orange-600 hover:bg-orange-700 text-white"
                           >
                             {retryingId === order._id ? (
-                              <div className="w-4 h-4 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" />
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             ) : (
                               <>
                                 <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                                 Retry Payment
                               </>
                             )}
-                          </Button>
-                        )}
-                        {order.status === "paid" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => navigate(`/orders/${order._id}`)}
-                          >
-                            View Details
                           </Button>
                         )}
                       </div>
