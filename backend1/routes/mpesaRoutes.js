@@ -1,9 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { protect } = require("../middleware/authMiddleware");
-const { stkPush, stkCallback } = require("../controllers/mpesaController");
+const mpesaController = require("../controllers/mpesaController");
+const { verifyToken } = require("../middleware/auth");
 
-router.post("/stkpush", protect, stkPush);
-router.post("/callback", stkCallback); // Called by Safaricom
+router.post("/stkpush", verifyToken, mpesaController.stkPush);
+router.post("/retry/:orderId", verifyToken, mpesaController.retryStkPush);
+router.get("/status/:orderId", verifyToken, mpesaController.checkPaymentStatus);
+router.post("/callback", mpesaController.stkCallback); // No auth - called by M-Pesa
 
 module.exports = router;
