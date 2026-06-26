@@ -54,13 +54,23 @@ export const ordersApi = {
   getAll: (token: string) => request<any[]>("/orders", { headers: authHeaders(token) }),
 };
 
+// M-Pesa
 export const mpesaApi = {
   stkPush: (token: string, body: { orderId: string; phone: string }) =>
-    api.post("/mpesa/stkpush", body, { headers: { Authorization: `Bearer ${token}` } }),
+    request<any>("/mpesa/stkpush", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    }),
 
   retryStkPush: (token: string, orderId: string) =>
-    api.post(`/mpesa/retry/${orderId}`, {}, { headers: { Authorization: `Bearer ${token}` } }),
+    request<any>(`/mpesa/retry/${orderId}`, {
+      method: "POST",
+      headers: authHeaders(token),
+    }),
 
   checkPaymentStatus: (token: string, orderId: string) =>
-    api.get(`/mpesa/status/${orderId}`, { headers: { Authorization: `Bearer ${token}` } }),
+    request<any>(`/mpesa/status/${orderId}`, {
+      headers: authHeaders(token),
+    }),
 };

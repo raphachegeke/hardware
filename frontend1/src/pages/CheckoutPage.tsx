@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Loader2, CheckCircle, XCircle, Clock, RotateCcw, Smartphone } from "lucide-react";
+import {
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Clock,
+  RotateCcw,
+  Smartphone,
+} from "lucide-react";
 
 type Step = "form" | "paying" | "waiting" | "success" | "failed";
 
@@ -54,14 +61,17 @@ const CheckoutPage = () => {
     if (retryOrderId && token) {
       setOrderId(retryOrderId);
       // Fetch order details to prefill
-      ordersApi.getById(token, retryOrderId).then((order) => {
-        const orderData = order.order || order;
-        setPhone(orderData.phone?.replace("254", "0") || "");
-        setAddress(orderData.deliveryAddress || "");
-        handleRetryPayment(retryOrderId);
-      }).catch(() => {
-        setError("Order not found");
-      });
+      ordersApi
+        .getById(token, retryOrderId)
+        .then((order) => {
+          const orderData = order.order || order;
+          setPhone(orderData.phone?.replace("254", "0") || "");
+          setAddress(orderData.deliveryAddress || "");
+          handleRetryPayment(retryOrderId);
+        })
+        .catch(() => {
+          setError("Order not found");
+        });
     }
   }, [retryOrderId]);
 
@@ -84,56 +94,59 @@ const CheckoutPage = () => {
     }
   }, []);
 
-  const startPolling = useCallback((oid: string) => {
-    waitStartTimeRef.current = Date.now();
-    setElapsedTime(0);
-    setCanRetry(false);
-    setStep("waiting");
+  const startPolling = useCallback(
+    (oid: string) => {
+      waitStartTimeRef.current = Date.now();
+      setElapsedTime(0);
+      setCanRetry(false);
+      setStep("waiting");
 
-    // Update elapsed time every second
-    timerIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - waitStartTimeRef.current;
-      setElapsedTime(Math.floor(elapsed / 1000));
+      // Update elapsed time every second
+      timerIntervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - waitStartTimeRef.current;
+        setElapsedTime(Math.floor(elapsed / 1000));
 
-      // Enable retry after cooldown
-      if (elapsed >= RETRY_COOLDOWN) {
-        setCanRetry(true);
-      }
-
-      // Timeout after max wait
-      if (elapsed >= MAX_WAIT_TIME) {
-        stopPolling();
-        setStep("failed");
-        setFailureReason("Payment timed out. The STK push may have expired.");
-      }
-    }, 1000);
-
-    // Poll for payment status
-    pollIntervalRef.current = setInterval(async () => {
-      try {
-        const response = await mpesaApi.checkPaymentStatus(token!, oid);
-        const status = response.data.status;
-
-        if (status === "paid") {
-          stopPolling();
-          clearCart();
-          setStep("success");
-          setPaymentResult({
-            mpesaReceiptNumber: response.data.mpesaReceiptNumber,
-          });
-        } else if (status === "failed") {
-          stopPolling();
-          setStep("failed");
-          setFailureReason(response.data.message || "Payment failed");
+        // Enable retry after cooldown
+        if (elapsed >= RETRY_COOLDOWN) {
           setCanRetry(true);
         }
-        // If "pending", continue polling
-      } catch (err: any) {
-        console.error("Poll error:", err);
-        // Don't stop polling on network errors, just continue
-      }
-    }, POLL_INTERVAL);
-  }, [token, clearCart, stopPolling]);
+
+        // Timeout after max wait
+        if (elapsed >= MAX_WAIT_TIME) {
+          stopPolling();
+          setStep("failed");
+          setFailureReason("Payment timed out. The STK push may have expired.");
+        }
+      }, 1000);
+
+      // Poll for payment status
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const response = await mpesaApi.checkPaymentStatus(token!, oid);
+          const status = response.status;
+
+          if (status === "paid") {
+            stopPolling();
+            clearCart();
+            setStep("success");
+            setPaymentResult({
+              mpesaReceiptNumber: response.mpesaReceiptNumber,
+            });
+          } else if (status === "failed") {
+            stopPolling();
+            setStep("failed");
+            setFailureReason(response.message || "Payment failed");
+            setCanRetry(true);
+          }
+          // If "pending", continue polling
+        } catch (err: any) {
+          console.error("Poll error:", err);
+          // Don't stop polling on network errors, just continue
+        }
+      }, POLL_INTERVAL);
+    },
+    [token, clearCart, stopPolling],
+  );
 
   const handleCheckout = async () => {
     setError("");
@@ -153,7 +166,10 @@ const CheckoutPage = () => {
 
       // Create order
       const order = await ordersApi.create(token!, {
-        items: items.map((i) => ({ product: i.productId, quantity: i.quantity })),
+        items: items.map((i) => ({
+          product: i.productId,
+          quantity: i.quantity,
+        })),
         phone: mpesaPhone,
         deliveryAddress: address,
       });
@@ -163,19 +179,25 @@ const CheckoutPage = () => {
 
       // Trigger STK Push
       setStep("paying");
-      const result = await mpesaApi.stkPush(token!, { orderId: oid, phone: mpesaPhone });
-      setPaymentResult(result.data);
+      const result = await mpesaApi.stkPush(token!, {
+        orderId: oid,
+        phone: mpesaPhone,
+      });
+      setPaymentResult(result);
 
-      // Check if STK push was accepted
-      if (result.data.ResponseCode === "0") {
+      if (result.ResponseCode === "0") {
         startPolling(oid);
       } else {
         setStep("failed");
-        setFailureReason(result.data.ResponseDescription || "STK Push was rejected");
+        setFailureReason(
+          result.data.ResponseDescription || "STK Push was rejected",
+        );
         setCanRetry(true);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || "An error occurred");
+      setError(
+        err.response?.data?.message || err.message || "An error occurred",
+      );
       setStep("failed");
       setCanRetry(true);
     } finally {
@@ -193,17 +215,21 @@ const CheckoutPage = () => {
     try {
       setStep("paying");
       const result = await mpesaApi.retryStkPush(token!, targetOrderId);
-      setPaymentResult(result.data);
+      setPaymentResult(result);
 
-      if (result.data.ResponseCode === "0") {
+      if (result.ResponseCode === "0") {
         startPolling(targetOrderId);
       } else {
         setStep("failed");
-        setFailureReason(result.data.ResponseDescription || "STK Push was rejected");
+        setFailureReason(
+          result.data.ResponseDescription || "STK Push was rejected",
+        );
         setCanRetry(true);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || "Failed to retry payment");
+      setError(
+        err.response?.data?.message || err.message || "Failed to retry payment",
+      );
       setStep("failed");
       setCanRetry(true);
     } finally {
@@ -259,7 +285,10 @@ const CheckoutPage = () => {
             <div className="bg-card border rounded-lg p-6 space-y-3">
               <h2 className="font-display font-bold">Order Summary</h2>
               {items.map((item) => (
-                <div key={item.productId} className="flex justify-between text-sm">
+                <div
+                  key={item.productId}
+                  className="flex justify-between text-sm"
+                >
                   <span className="text-muted-foreground">
                     {item.name} × {item.quantity}
                   </span>
@@ -270,7 +299,9 @@ const CheckoutPage = () => {
               ))}
               <div className="border-t pt-3 flex justify-between font-bold text-lg">
                 <span>Total</span>
-                <span className="text-primary">KSh {total.toLocaleString()}</span>
+                <span className="text-primary">
+                  KSh {total.toLocaleString()}
+                </span>
               </div>
             </div>
 
@@ -369,9 +400,12 @@ const CheckoutPage = () => {
               <CheckCircle className="w-12 h-12 text-success" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-success">Payment Successful!</h2>
+              <h2 className="text-2xl font-bold text-success">
+                Payment Successful!
+              </h2>
               <p className="text-muted-foreground">
-                Your payment has been confirmed and your order is being processed.
+                Your payment has been confirmed and your order is being
+                processed.
               </p>
             </div>
 
@@ -417,9 +451,13 @@ const CheckoutPage = () => {
               <XCircle className="w-12 h-12 text-destructive" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-destructive">Payment Failed</h2>
+              <h2 className="text-2xl font-bold text-destructive">
+                Payment Failed
+              </h2>
               <p className="text-muted-foreground">
-                {failureReason || error || "The payment could not be completed."}
+                {failureReason ||
+                  error ||
+                  "The payment could not be completed."}
               </p>
             </div>
 
@@ -430,17 +468,15 @@ const CheckoutPage = () => {
                   <span className="font-mono">{orderId}</span>
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  This order has been saved. You can retry payment from your orders page or click the button below.
+                  This order has been saved. You can retry payment from your
+                  orders page or click the button below.
                 </p>
               </div>
             )}
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
               {orderId && (
-                <Button
-                  onClick={() => handleRetryPayment()}
-                  disabled={loading}
-                >
+                <Button onClick={() => handleRetryPayment()} disabled={loading}>
                   {loading ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
@@ -460,10 +496,7 @@ const CheckoutPage = () => {
               >
                 Go Back
               </Button>
-              <Button
-                variant="ghost"
-                onClick={() => navigate("/orders")}
-              >
+              <Button variant="ghost" onClick={() => navigate("/orders")}>
                 View Orders
               </Button>
             </div>
