@@ -99,53 +99,66 @@ const CheckoutPage = () => {
     }
   }, []);
 
-  const startPolling = useCallback(
-    (oid: string) => {
-      waitStartTimeRef.current = Date.now();
-      setElapsedTime(0);
-      setCanRetry(false);
-      setStep("waiting");
+const startPolling = useCallback((oid: string) => {
+  waitStartTimeRef.current = Date.now();
+  setElapsedTime(0);
+  setCanRetry(false);
+  setStep("waiting");
+  let failCount = 0; // 👈 Track failures
 
-      timerIntervalRef.current = setInterval(() => {
-        const elapsed = Date.now() - waitStartTimeRef.current;
-        setElapsedTime(Math.floor(elapsed / 1000));
+  // Update elapsed time every second
+  timerIntervalRef.current = setInterval(() => {
+    const elapsed = Date.now() - waitStartTimeRef.current;
+    setElapsedTime(Math.floor(elapsed / 1000));
 
-        if (elapsed >= RETRY_COOLDOWN) {
-          setCanRetry(true);
-        }
+    if (elapsed >= RETRY_COOLDOWN) {
+      setCanRetry(true);
+    }
 
-        if (elapsed >= MAX_WAIT_TIME) {
-          stopPolling();
-          setStep("failed");
-          setFailureReason("Payment timed out. The STK push may have expired.");
-        }
-      }, 1000);
+    if (elapsed >= MAX_WAIT_TIME) {
+      stopPolling();
+      setStep("failed");
+      setFailureReason("Payment timed out. Please try again or confirm manually.");
+    }
+  }, 1000);
 
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const response = await mpesaApi.checkPaymentStatus(token!, oid);
-          const status = response.status;
+  // Poll for payment status
+  pollIntervalRef.current = setInterval(async () => {
+    try {
+      const response = await mpesaApi.checkPaymentStatus(token!, oid);
+      failCount = 0; // Reset on success
 
-          if (status === "paid") {
-            stopPolling();
-            clearCart();
-            setStep("success");
-            setPaymentResult({
-              mpesaReceiptNumber: response.mpesaReceiptNumber,
-            });
-          } else if (status === "failed") {
-            stopPolling();
-            setStep("failed");
-            setFailureReason(response.message || "Payment failed");
-            setCanRetry(true);
-          }
-        } catch (err) {
-          console.error("Poll error:", err);
-        }
-      }, POLL_INTERVAL);
-    },
-    [token, clearCart, stopPolling],
-  );
+      const status = response.status;
+
+      if (status === "paid") {
+        stopPolling();
+        clearCart();
+        setStep("success");
+        setPaymentResult({
+          mpesaReceiptNumber: response.mpesaReceiptNumber,
+        });
+      } else if (status === "failed") {
+        stopPolling();
+        setStep("failed");
+        setFailureReason(response.message || "Payment failed");
+        setCanRetry(true);
+      }
+    } catch (err: any) {
+      failCount++;
+      console.error("Poll error:", err);
+      
+      // Stop polling after 3 consecutive failures (e.g., 404s)
+      if (failCount >= 3) {
+        stopPolling();
+        setStep("failed");
+        setFailureReason("Could not verify payment. If you paid, use manual confirmation.");
+        setCanRetry(true);
+      }
+    }
+  }, POLL_INTERVAL);
+}, [token, clearCart, stopPolling]);
+
+
 
   const handleCheckout = async () => {
     setError("");

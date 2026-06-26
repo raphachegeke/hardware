@@ -4,14 +4,14 @@ const Order = require("../models/Order");
 // Generate access token
 const getAccessToken = async () => {
   const auth = Buffer.from(
-    `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`
+    `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`,
   ).toString("base64");
 
   const { data } = await axios.get(
     `${process.env.MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
     {
       headers: { Authorization: `Basic ${auth}` },
-    }
+    },
   );
   return data.access_token;
 };
@@ -36,7 +36,7 @@ exports.stkPush = async (req, res) => {
       .slice(0, 14);
 
     const password = Buffer.from(
-      process.env.MPESA_SHORTCODE + process.env.MPESA_PASSKEY + timestamp
+      process.env.MPESA_SHORTCODE + process.env.MPESA_PASSKEY + timestamp,
     ).toString("base64");
 
     const payload = {
@@ -49,7 +49,7 @@ exports.stkPush = async (req, res) => {
       PartyB: 6444134,
       PhoneNumber: phone,
       CallBackURL: `${process.env.BACKEND_URL}/api/mpesa/callback`,
-      AccountReference: order._id.toString(),
+      AccountReference: order._id.toString().slice(-12),
       TransactionDesc: "Hardware Shop Payment",
     };
 
@@ -58,7 +58,7 @@ exports.stkPush = async (req, res) => {
       payload,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
-      }
+      },
     );
 
     // Save checkout request ID to order for tracking
@@ -73,9 +73,9 @@ exports.stkPush = async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error("STK Push Error:", error.response?.data || error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "STK Push failed",
-      details: error.response?.data?.errorMessage || error.message 
+      details: error.response?.data?.errorMessage || error.message,
     });
   }
 };
@@ -85,9 +85,10 @@ exports.retryStkPush = async (req, res) => {
   try {
     const { orderId } = req.params;
     const order = await Order.findById(orderId);
-    
+
     if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.status === "paid") return res.status(400).json({ message: "Order already paid" });
+    if (order.status === "paid")
+      return res.status(400).json({ message: "Order already paid" });
 
     // Use the phone number from the original order
     const phone = order.phone;
@@ -99,7 +100,7 @@ exports.retryStkPush = async (req, res) => {
       .slice(0, 14);
 
     const password = Buffer.from(
-      process.env.MPESA_SHORTCODE + process.env.MPESA_PASSKEY + timestamp
+      process.env.MPESA_SHORTCODE + process.env.MPESA_PASSKEY + timestamp,
     ).toString("base64");
 
     const payload = {
@@ -112,7 +113,7 @@ exports.retryStkPush = async (req, res) => {
       PartyB: 6444134,
       PhoneNumber: phone,
       CallBackURL: `${process.env.BACKEND_URL}/api/mpesa/callback`,
-      AccountReference: order._id.toString(),
+      AccountReference: order._id.toString().slice(-12),
       TransactionDesc: "Hardware Shop Payment",
     };
 
@@ -121,7 +122,7 @@ exports.retryStkPush = async (req, res) => {
       payload,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
-      }
+      },
     );
 
     // Update with new checkout request ID
@@ -136,10 +137,13 @@ exports.retryStkPush = async (req, res) => {
 
     res.json(data);
   } catch (error) {
-    console.error("Retry STK Push Error:", error.response?.data || error.message);
-    res.status(500).json({ 
+    console.error(
+      "Retry STK Push Error:",
+      error.response?.data || error.message,
+    );
+    res.status(500).json({
       message: "STK Push retry failed",
-      details: error.response?.data?.errorMessage || error.message 
+      details: error.response?.data?.errorMessage || error.message,
     });
   }
 };
@@ -149,7 +153,7 @@ exports.checkPaymentStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const order = await Order.findById(orderId);
-    
+
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     // If already paid, return immediately
@@ -179,7 +183,7 @@ exports.checkPaymentStatus = async (req, res) => {
           .slice(0, 14);
 
         const password = Buffer.from(
-          process.env.MPESA_SHORTCODE + process.env.MPESA_PASSKEY + timestamp
+          process.env.MPESA_SHORTCODE + process.env.MPESA_PASSKEY + timestamp,
         ).toString("base64");
 
         const { data } = await axios.post(
@@ -192,7 +196,7 @@ exports.checkPaymentStatus = async (req, res) => {
           },
           {
             headers: { Authorization: `Bearer ${accessToken}` },
-          }
+          },
         );
 
         const resultCode = data.ResultCode;
@@ -200,7 +204,7 @@ exports.checkPaymentStatus = async (req, res) => {
         if (resultCode === "0") {
           // Paid - update order
           const receipt = data.CallbackMetadata?.Item?.find(
-            (i) => i.Name === "MpesaReceiptNumber"
+            (i) => i.Name === "MpesaReceiptNumber",
           )?.Value;
 
           await Order.findByIdAndUpdate(orderId, {
@@ -217,9 +221,10 @@ exports.checkPaymentStatus = async (req, res) => {
           await Order.findByIdAndUpdate(orderId, { status: "failed" });
           return res.json({
             status: "failed",
-            message: resultCode === "1032" 
-              ? "You cancelled the payment on your phone" 
-              : "Payment timed out. Please try again.",
+            message:
+              resultCode === "1032"
+                ? "You cancelled the payment on your phone"
+                : "Payment timed out. Please try again.",
           });
         } else if (resultCode === "1036") {
           // Insufficient funds
@@ -231,7 +236,10 @@ exports.checkPaymentStatus = async (req, res) => {
         }
         // For other codes (1001 = processing), continue polling
       } catch (queryError) {
-        console.error("STK Query Error:", queryError.response?.data || queryError.message);
+        console.error(
+          "STK Query Error:",
+          queryError.response?.data || queryError.message,
+        );
         // Don't fail the whole request, just return pending
       }
     }
@@ -258,40 +266,46 @@ exports.stkCallback = async (req, res) => {
       return res.status(400).json({ ResultCode: 1, ResultDesc: "No data" });
     }
 
-    const orderId = stkCallback.AccountReference;
     const resultCode = stkCallback.ResultCode;
     const resultDesc = stkCallback.ResultDesc;
     const checkoutRequestID = stkCallback.CheckoutRequestID;
 
-    console.log(`Order: ${orderId}, ResultCode: ${resultCode}, Desc: ${resultDesc}`);
+    // Find order by CheckoutRequestID (reliable - M-Pesa always sends this back)
+    let order = await Order.findOne({ checkoutRequestID });
+
+    // Fallback: try AccountReference if it exists and looks valid
+    if (!order && stkCallback.AccountReference) {
+      order = await Order.findById(stkCallback.AccountReference);
+    }
+
+    if (!order) {
+      console.log(
+        `⚠️ No order found for CheckoutRequestID: ${checkoutRequestID}, AccountRef: ${stkCallback.AccountReference}`,
+      );
+      return res.json({ ResultCode: 0, ResultDesc: "Accepted" });
+    }
+
+    console.log(
+      `Found order: ${order._id}, ResultCode: ${resultCode}, Desc: ${resultDesc}`,
+    );
 
     const receipt = stkCallback.CallbackMetadata?.Item?.find(
-      (i) => i.Name === "MpesaReceiptNumber"
+      (i) => i.Name === "MpesaReceiptNumber",
     )?.Value;
 
     if (resultCode === 0) {
-      const updated = await Order.findByIdAndUpdate(
-        orderId,
-        {
-          status: "paid",
-          mpesaReceiptNumber: receipt,
-          checkoutRequestID: checkoutRequestID,
-          paidAt: new Date(),
-        },
-        { new: true }
-      );
-      console.log(`✅ Order ${orderId} PAID. Receipt: ${receipt}`);
-      console.log("Updated order:", JSON.stringify(updated, null, 2));
+      order.status = "paid";
+      order.mpesaReceiptNumber = receipt;
+      order.paidAt = new Date();
+      await order.save();
+      console.log(`✅ Order ${order._id} PAID. Receipt: ${receipt}`);
     } else {
-      await Order.findByIdAndUpdate(orderId, {
-        status: "failed",
-        lastPaymentError: resultDesc,
-        checkoutRequestID: checkoutRequestID,
-      });
-      console.log(`❌ Order ${orderId} FAILED: ${resultDesc}`);
+      order.status = "failed";
+      order.lastPaymentError = resultDesc;
+      await order.save();
+      console.log(`❌ Order ${order._id} FAILED: ${resultDesc}`);
     }
 
-    // Always respond quickly to M-Pesa
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (error) {
     console.error("======= CALLBACK ERROR =======");
@@ -309,7 +323,9 @@ exports.manualConfirm = async (req, res) => {
     const { orderId, receiptNumber } = req.body;
 
     if (!orderId || !receiptNumber) {
-      return res.status(400).json({ message: "Order ID and receipt number required" });
+      return res
+        .status(400)
+        .json({ message: "Order ID and receipt number required" });
     }
 
     const order = await Order.findById(orderId);
@@ -324,7 +340,9 @@ exports.manualConfirm = async (req, res) => {
     order.paidAt = new Date();
     await order.save();
 
-    console.log(`Manual confirm: Order ${orderId} paid with receipt ${receiptNumber}`);
+    console.log(
+      `Manual confirm: Order ${orderId} paid with receipt ${receiptNumber}`,
+    );
 
     res.json({ message: "Payment confirmed", order });
   } catch (error) {
@@ -333,11 +351,3 @@ exports.manualConfirm = async (req, res) => {
   }
 };
 
-// Debug endpoint - check what M-Pesa would see
-exports.debugCallback = async (req, res) => {
-  console.log("=== DEBUG CALLBACK RECEIVED ===");
-  console.log("Headers:", JSON.stringify(req.headers, null, 2));
-  console.log("Body:", JSON.stringify(req.body, null, 2));
-  console.log("=== END DEBUG ===");
-  res.json({ message: "Debug logged, check server logs" });
-};
